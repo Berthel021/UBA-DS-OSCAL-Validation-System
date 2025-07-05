@@ -1,0 +1,4 @@
+module "discover" {
+  source = "./modules/crowdstrike/discover"
+  aws_account_id = var.account_id
+}
