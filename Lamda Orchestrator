@@ -1,0 +1,22 @@
+from falconpy import Hosts, RealTimeResponse
+
+def handler(event, context):
+    falcon = Hosts(
+        client_id=os.getenv('FALCON_CLIENT_ID'),
+        client_secret=os.getenv('FALCON_CLIENT_SECRET')
+    )
+    
+    # 1. Get device ID
+    device = falcon.query_devices_by_filter(
+        filter=f"hostname:'{event['hostname']}'"
+    )['resources'][0]
+    
+    # 2. Initiate containment
+    if event['score'] >= 0.9:
+        rtr = RealTimeResponse(auth_object=falcon.auth_object)
+        rtr.init_session(device_id=device)
+        rtr.run_command('contain', device_id=device)
+        
+        # 3. Collect forensics
+        processes = rtr.run_command('ps', device_id=device)
+        upload_to_s3(processes, f"forensics/{event['detection_id']}/processes.json")
