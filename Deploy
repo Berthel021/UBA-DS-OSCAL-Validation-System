@@ -1,0 +1,3 @@
+export TF_VAR_crowdstrike_client_id="your-falcon-id"
+export TF_VAR_crowdstrike_client_secret="your-falcon-secret"
+terraform apply
