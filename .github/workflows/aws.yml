@@ -113,21 +113,3 @@ jobs:
           directory: .
           framework: terraform
           quiet: true
-
-  notify:
-    name: Notify Status
-    needs: [deploy, security-scan]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Slack Notification
-        if: ${{ github.event_name == 'push' }}  # Only notify on push events
-        uses: slackapi/slack-github-action@v1
-        with:
-          slack-message: |
-            UBA-DS Deployment ${{ job.status }}
-            *Image Tag*: ${{ needs.build-and-push.outputs.image_tag }}
-            *Environment*: production
-            *URL*: https://${{ needs.deploy.outputs.alb-dns }}
-          channel-id: ${{ secrets.SLACK_CHANNEL }}
-          slack-token: ${{ secrets.SLACK_BOT_TOKEN }}
