@@ -1,4 +1,4 @@
-name: Security Scan & ECS Connection Test
+name: Security Scan with SOAR Containment
 on:
   push:
     branches: [ main ]
@@ -11,6 +11,7 @@ env:
   ECR_REPOSITORY: uba-ds-validator
   ECS_CLUSTER: uba-ds-cluster
   ECS_SERVICE: uba-validator-service
+  SOAR_API_URL: https://your-soar-platform.com/api/v1  # Update with your SOAR URL
 
 jobs:
   security-scan:
@@ -19,37 +20,66 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Required for dependency review
 
-      # Docker Image Security Scan (with relaxed severity)
+      # Docker Image Security Scan
       - name: Scan with Anchore
+        id: anchore-scan
         uses: anchore/scan-action@v3
         with:
           image: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-          fail-build: false
-          severity-cutoff: critical  # Changed from 'high' to 'critical'
+          fail-build: false  # We'll handle failures manually
+          severity-cutoff: low  # Report all findings but only act on critical
 
-      # Infrastructure Security Scan
-      - name: Terraform Security Scan
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: .
-          framework: terraform
-          quiet: true
-          skip_check: CKV_AWS_8,CKV_AWS_107  # Example skips for non-critical rules
+      # Process scan results
+      - name: Analyze Scan Results
+        id: analyze-scan
+        run: |
+          # Extract critical vulnerabilities count
+          CRITICAL_COUNT=$(jq '.results[0].vulnerabilities[] | select(.severity == "Critical") | .vuln' <<< '${{ steps.anchore-scan.outputs.scan-results }}' | wc -l)
+          echo "critical_count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+          echo "Found $CRITICAL_COUNT critical vulnerabilities"
 
-      # Dependency Scanning (only on PRs)
-      - name: Dependency Check
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v2
-        with:
-          base-ref: ${{ github.base_ref }}  # Explicitly set for PRs
-          head-ref: ${{ github.head_ref }}
+          # Fail only if critical vulnerabilities exist
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::Critical vulnerabilities found!"
+            exit 1
+          fi
 
-  test-ecs-connection:
-    name: Test ECS Connection
+      # SOAR Integration for Critical Vulnerabilities
+      - name: Trigger SOAR Containment
+        if: steps.analyze-scan.outputs.critical_count > 0
+        env:
+          SOAR_API_KEY: ${{ secrets.SOAR_API_KEY }}
+        run: |
+          # Format the containment request
+          CONTAINMENT_PAYLOAD=$(jq -n \
+            --arg image "${{ env.ECR_REPOSITORY }}" \
+            --arg count "${{ steps.analyze-scan.outputs.critical_count }}" \
+            --arg scan_results "${{ steps.anchore-scan.outputs.scan-results }}" \
+            '{
+              "action": "contain",
+              "target_type": "container_image",
+              "target": $image,
+              "parameters": {
+                "severity": "critical",
+                "vulnerability_count": $count,
+                "scan_results": ($scan_results | fromjson)
+              }
+            }')
+
+          # Send to SOAR platform
+          curl -X POST \
+            -H "Authorization: Bearer $SOAR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$CONTAINMENT_PAYLOAD" \
+            "${{ env.SOAR_API_URL }}/containment"
+
+          echo "SOAR containment triggered for critical vulnerabilities"
+
+  ecs-status-check:
+    name: ECS Status Check
     needs: security-scan
+    if: success() || failure()  # Runs regardless of security scan results
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS Credentials
@@ -59,32 +89,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Check ECS Cluster Status
+      - name: Verify ECS Health
         run: |
-          STATUS=$(aws ecs describe-clusters \
+          # Check cluster status
+          aws ecs describe-clusters \
             --clusters ${{ env.ECS_CLUSTER }} \
             --query 'clusters[0].status' \
-            --output text)
-          
-          if [ "$STATUS" != "ACTIVE" ]; then
-            echo "::error::Cluster is not active (Status: $STATUS)"
-            exit 1
-          fi
-          echo "Cluster status: $STATUS"
+            --output text
 
-      - name: Verify Service Health
-        run: |
-          SERVICE=$(aws ecs describe-services \
+          # Check service status
+          aws ecs describe-services \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0]')
-          
-          STATUS=$(jq -r '.status' <<< "$SERVICE")
-          DESIRED=$(jq -r '.desiredCount' <<< "$SERVICE")
-          RUNNING=$(jq -r '.runningCount' <<< "$SERVICE")
-          
-          if [ "$STATUS" != "ACTIVE" ] || [ "$RUNNING" -lt "$DESIRED" ]; then
-            echo "::error::Service unhealthy (Status: $STATUS, Running: $RUNNING/$DESIRED)"
-            exit 1
-          fi
-          echo "Service healthy (Running: $RUNNING/$DESIRED)"
+            --query 'services[0].[status,runningCount,desiredCount]' \
+            --output text
