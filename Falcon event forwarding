@@ -1,0 +1,20 @@
+resource "aws_cloudwatch_event_rule" "falcon_detections" {
+  name          = "crowdstrike-detections"
+  event_pattern = jsonencode({
+    source      = ["crowdstrike.com"],
+    detail-type = ["Falcon Detection Alert"]
+  })
+}
+
+resource "aws_lambda_function" "process_falcon" {
+  filename      = "${path.module}/lambda/process_falcon.zip"
+  function_name = "process-falcon-events"
+  handler       = "index.handler"
+  runtime       = "python3.9"
+}
+
+resource "aws_cloudwatch_event_target" "falcon_to_lambda" {
+  rule      = aws_cloudwatch_event_rule.falcon_detections.name
+  target_id = "send-to-lambda"
+  arn       = aws_lambda_function.process_falcon.arn
+}
