@@ -121,7 +121,7 @@ jobs:
     if: always()
     steps:
       - name: Slack Notification
-        if: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: ${{ github.event_name == 'push' }}  # Only notify on push events
         uses: slackapi/slack-github-action@v1
         with:
           slack-message: |
@@ -129,5 +129,5 @@ jobs:
             *Image Tag*: ${{ needs.build-and-push.outputs.image_tag }}
             *Environment*: production
             *URL*: https://${{ needs.deploy.outputs.alb-dns }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          channel-id: ${{ secrets.SLACK_CHANNEL }}
+          slack-token: ${{ secrets.SLACK_BOT_TOKEN }}
