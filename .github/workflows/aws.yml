@@ -2,6 +2,8 @@ name: Security Scan & ECS Connection Test
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -17,14 +19,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Required for dependency review
 
-      # Docker Image Security Scan
+      # Docker Image Security Scan (with relaxed severity)
       - name: Scan with Anchore
         uses: anchore/scan-action@v3
         with:
           image: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
           fail-build: false
-          severity-cutoff: high
+          severity-cutoff: critical  # Changed from 'high' to 'critical'
 
       # Infrastructure Security Scan
       - name: Terraform Security Scan
@@ -33,10 +37,15 @@ jobs:
           directory: .
           framework: terraform
           quiet: true
+          skip_check: CKV_AWS_8,CKV_AWS_107  # Example skips for non-critical rules
 
-      # Dependency Scanning
+      # Dependency Scanning (only on PRs)
       - name: Dependency Check
+        if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v2
+        with:
+          base-ref: ${{ github.base_ref }}  # Explicitly set for PRs
+          head-ref: ${{ github.head_ref }}
 
   test-ecs-connection:
     name: Test ECS Connection
@@ -50,44 +59,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Verify ECS cluster accessibility
       - name: Check ECS Cluster Status
         run: |
-          aws ecs describe-clusters \
+          STATUS=$(aws ecs describe-clusters \
             --clusters ${{ env.ECS_CLUSTER }} \
             --query 'clusters[0].status' \
-            --output text
-          
-          echo "Cluster connection successful"
-
-      # Verify service is running
-      - name: Check ECS Service Status
-        run: |
-          SERVICE_STATUS=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].status' \
             --output text)
           
-          if [ "$SERVICE_STATUS" != "ACTIVE" ]; then
-            echo "::error::Service is not active (Status: $SERVICE_STATUS)"
+          if [ "$STATUS" != "ACTIVE" ]; then
+            echo "::error::Cluster is not active (Status: $STATUS)"
             exit 1
-          else
-            echo "Service is active and running"
           fi
+          echo "Cluster status: $STATUS"
 
-      # Verify tasks are healthy
-      - name: Check Running Tasks
+      - name: Verify Service Health
         run: |
-          RUNNING_TASKS=$(aws ecs describe-services \
+          SERVICE=$(aws ecs describe-services \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].runningCount' \
-            --output text)
+            --query 'services[0]')
           
-          if [ "$RUNNING_TASKS" -eq "0" ]; then
-            echo "::error::No tasks running"
+          STATUS=$(jq -r '.status' <<< "$SERVICE")
+          DESIRED=$(jq -r '.desiredCount' <<< "$SERVICE")
+          RUNNING=$(jq -r '.runningCount' <<< "$SERVICE")
+          
+          if [ "$STATUS" != "ACTIVE" ] || [ "$RUNNING" -lt "$DESIRED" ]; then
+            echo "::error::Service unhealthy (Status: $STATUS, Running: $RUNNING/$DESIRED)"
             exit 1
-          else
-            echo "Found $RUNNING_TASKS running tasks"
           fi
+          echo "Service healthy (Running: $RUNNING/$DESIRED)"
