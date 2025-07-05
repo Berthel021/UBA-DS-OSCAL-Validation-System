@@ -1,0 +1,27 @@
+name: CrowdStrike UBA Enrichment
+phases:
+  - name: Host Context
+    steps:
+      - action: crowdstrike/device_search
+        parameters:
+          hostname: ${event.hostname}
+        success:
+          - action: set_fact
+            name: device_info
+            value: ${results[0]}
+      - action: crowdstrike/behavior_search
+        parameters:
+          device_id: ${device_info.device_id}
+          timeframe: "last 1 hour"
+
+  - name: Auto-Containment
+    condition: ${event.score >= 0.9}
+    steps:
+      - action: crowdstrike/contain_host
+        parameters:
+          device_id: ${device_info.device_id}
+          duration: "1440" # 24 hours
+      - action: servicenow/update_incident
+        parameters:
+          id: ${container.incident_id}
+          comments: "Host contained via CrowdStrike Falcon"
