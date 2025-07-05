@@ -1,0 +1,22 @@
+resource "crowdstrike_host_group" "high_risk" {
+  name        = "high_risk_containment"
+  description = "Hosts with UBA-DS scores ≥0.9"
+}
+
+resource "crowdstrike_prevention_policy" "uba_contain" {
+  name            = "UBA-DS Auto-Contain"
+  severity        = "Critical"
+  host_groups     = [crowdstrike_host_group.high_risk.id]
+  cloud_anti_malware = {
+    detection = "BLOCK"
+  }
+  sensor_anti_malware = {
+    detection = "BLOCK"
+  }
+}
+
+resource "aws_lambda_permission" "allow_falcon" {
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.crowdstrike_orchestrator.function_name
+  principal     = "crowdstrike.com"
+}
