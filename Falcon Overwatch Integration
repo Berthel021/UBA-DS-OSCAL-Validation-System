@@ -1,0 +1,4 @@
+resource "crowdstrike_overwatch_notification" "high_risk" {
+  alert_type = "HighRiskDetections"
+  email      = "security-team@example.com"
+}
