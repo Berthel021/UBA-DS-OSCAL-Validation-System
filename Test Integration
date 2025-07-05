@@ -1,0 +1,2 @@
+aws lambda invoke --function-name uba-crowdstrike-orchestrator \
+  --payload file://test/payload.json response.json
