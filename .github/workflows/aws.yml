@@ -121,33 +121,13 @@ jobs:
     if: always()
     steps:
       - name: Slack Notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL }}
         uses: slackapi/slack-github-action@v1
+        with:
+          slack-message: |
+            UBA-DS Deployment ${{ job.status }}
+            *Image Tag*: ${{ needs.build-and-push.outputs.image_tag }}
+            *Environment*: production
+            *URL*: https://${{ needs.deploy.outputs.alb-dns }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        with:
-          payload: |
-            {
-              "text": "UBA-DS Deployment ${{ job.status }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*UBA-DS Deployment Result*\n*Status*: ${{ job.status }}\n*Image*: `${{ needs.build-and-push.outputs.image_tag }}`\n*Environment*: production"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "View Service"
-                      },
-                      "url": "https://${{ needs.deploy.outputs.alb-dns }}"
-                    }
-                  ]
-                }
-              ]
-            }
