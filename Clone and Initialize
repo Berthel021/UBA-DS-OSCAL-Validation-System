@@ -1,0 +1,4 @@
+git clone https://github.com/yourorg/uba-ds-oscal-crowdstrike.git
+cd uba-ds-oscal-crowdstrike
+pre-commit install
+terraform init
