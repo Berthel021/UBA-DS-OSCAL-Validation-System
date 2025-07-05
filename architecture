@@ -1,0 +1,51 @@
+uba-ds-oscal-crowdstrike/
+├── .github/
+│   ├── workflows/
+│   │   ├── deploy.yml                  # CI/CD pipeline
+│   │   ├── security-scan.yml           # Checkov/TFSec scans
+│   │   ├── nist-compliance.yml        # NIST 800-53 validation
+│   │   └── crowdstrike-sync.yml       # CrowdStrike detection sync
+│   └── CODEOWNERS
+├── .checkov.yaml                      # Custom policies
+├── .tflint.hcl                        # Linting rules
+├── .pre-commit-config.yaml            # Pre-commit hooks
+├── README.md                          # Project documentation
+├── SECURITY.md                        # Vulnerability reporting
+├── COMPLIANCE.md                      # NIST/FedRAMP compliance
+├── main.tf                            # Root module
+├── variables.tf
+├── outputs.tf
+├── providers.tf
+├── backend.tf
+├── modules/
+│   ├── crowdstrike/
+│   │   ├── main.tf                    # Falcon sensor policies
+│   │   ├── ioa_rules.tf               # Custom IOA rules
+│   │   └── lambda/
+│   │       ├── orchestrator.py        # Containment logic
+│   │       └── sync.py                # Detection sync
+│   ├── ecs_service/                   # [Previous ECS components]
+│   ├── servicenow/                    # [Previous ServiceNow components]
+│   └── monitoring/
+│       ├── cloudwatch.tf
+│       └── falcon_events.tf           # CrowdStrike event forwarding
+├── terraform/
+│   ├── policies/
+│   │   ├── crowdstrike/
+│   │   │   ├── contain_user.yaml      # Containment playbook
+│   │   │   └── forensic_collect.yaml # Memory dump playbook
+│   │   └── nist/                      # [Previous NIST policies]
+│   └── scripts/
+│       ├── deploy.sh
+│       ├── destroy.sh
+│       └── falcon_auth.py             # OAuth2 helper
+├── playbooks/
+│   ├── crowdstrike_enrich.yml         # Detection enrichment
+│   ├── automatic_containment.yml      # Host containment
+│   └── forensic_analysis.yml          # Memory/process analysis
+└── examples/
+    ├── single-account/
+    │   └── main.tf
+    └── multi-region/
+        ├── us-east-1.tf
+        └── eu-west-1.tf
