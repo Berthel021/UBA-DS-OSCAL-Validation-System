@@ -9,8 +9,6 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: uba-ds-validator
-  ECS_CLUSTER: uba-ds-cluster
-  ECS_SERVICE: uba-validator-service
   SOAR_API_URL: https://your-soar-platform.com/api/v1  # Update with your SOAR URL
 
 jobs:
@@ -75,31 +73,3 @@ jobs:
             "${{ env.SOAR_API_URL }}/containment"
 
           echo "SOAR containment triggered for critical vulnerabilities"
-
-  ecs-status-check:
-    name: ECS Status Check
-    needs: security-scan
-    if: success() || failure()  # Runs regardless of security scan results
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Verify ECS Health
-        run: |
-          # Check cluster status
-          aws ecs describe-clusters \
-            --clusters ${{ env.ECS_CLUSTER }} \
-            --query 'clusters[0].status' \
-            --output text
-
-          # Check service status
-          aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].[status,runningCount,desiredCount]' \
-            --output text
